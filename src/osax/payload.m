@@ -323,6 +323,16 @@ static void init_instances()
 #endif
     }
 
+#ifdef __x86_64__
+    if (os_version.majorVersion == 14 && os_version.minorVersion == 8 && os_version.patchVersion == 5 && dp_desktop_picture_manager != nil) {
+        if (![dp_desktop_picture_manager respondsToSelector:@selector(moveSpace:toDisplay:displayUUID:)]) {
+            NSLog(@"[yabai-sa] invalid dppm instance %@! moving spaces will not work!", NSStringFromClass([dp_desktop_picture_manager class]));
+            [dp_desktop_picture_manager release];
+            dp_desktop_picture_manager = nil;
+        }
+    }
+#endif
+
     uint64_t add_space_addr = hex_find_seq(baseaddr + get_add_space_offset(os_version), get_add_space_pattern(os_version));
     if (add_space_addr == 0x0) {
         NSLog(@"[yabai-sa] failed to get pointer to addSpace function..");
@@ -492,9 +502,18 @@ static void do_space_move(char *message)
 
     asm__call_move_space(source_space, dest_space, dest_display_uuid, dock_spaces, move_space_fp);
 
-    dispatch_sync(dispatch_get_main_queue(), ^{
-        ((void (*)(id, SEL, id, unsigned, CFStringRef)) objc_msgSend)(dp_desktop_picture_manager, @selector(moveSpace:toDisplay:displayUUID:), source_space, dest_display_id, dest_display_uuid);
-    });
+    bool update_desktop_picture = true;
+#ifdef __x86_64__
+    NSOperatingSystemVersion os_version = [[NSProcessInfo processInfo] operatingSystemVersion];
+    // The native move already updates WallpaperAgent on Intel macOS 14.8.5.
+    // Sending the legacy update again uses state that has already been moved.
+    update_desktop_picture = !(os_version.majorVersion == 14 && os_version.minorVersion == 8 && os_version.patchVersion == 5);
+#endif
+    if (update_desktop_picture) {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            ((void (*)(id, SEL, id, unsigned, CFStringRef)) objc_msgSend)(dp_desktop_picture_manager, @selector(moveSpace:toDisplay:displayUUID:), source_space, dest_display_id, dest_display_uuid);
+        });
+    }
 
     if (focus_dest_space) {
         uint64_t new_source_space_id = SLSManagedDisplayGetCurrentSpace(SLSMainConnectionID(), source_display_uuid);

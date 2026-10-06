@@ -10,6 +10,7 @@ uint64_t get_dock_spaces_offset(NSOperatingSystemVersion os_version) {
     } else if (os_version.majorVersion == 15) {
         return 0xA0000;
     } else if (os_version.majorVersion == 14) {
+        if (os_version.minorVersion == 8 && os_version.patchVersion == 5) return 0xD4000;
         return os_version.minorVersion > 0 ? 0xD5000 : 0x140000;
     } else if (os_version.majorVersion == 13) {
         return 0x140000;
@@ -28,6 +29,7 @@ uint64_t get_dppm_offset(NSOperatingSystemVersion os_version) {
     } else if (os_version.majorVersion == 15) {
         return 0x13b000;
     } else if (os_version.majorVersion == 14) {
+        if (os_version.minorVersion == 8 && os_version.patchVersion == 5) return 0x2A7000;
         return os_version.minorVersion > 0 ? 0x12ce00 : 0x8000;
     } else if (os_version.majorVersion == 13) {
         return 0x8000;
@@ -119,6 +121,7 @@ uint64_t get_set_front_window_offset(NSOperatingSystemVersion os_version) {
     } else if (os_version.majorVersion == 15) {
         return 0x3d000;
     } else if (os_version.majorVersion == 14) {
+        if (os_version.minorVersion == 8 && os_version.patchVersion == 5) return 0x49000;
         return os_version.minorVersion > 0 ? 0x4a000 : 0x51BBE;
     } else if (os_version.majorVersion == 13) {
         return 0x52000;
@@ -154,6 +157,10 @@ const char *get_dppm_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26 || os_version.majorVersion == 15) {
         return "?? ?? ?? 00 31 FF 5D E9 ?? ??";
     } else if (os_version.majorVersion == 14) {
+        if (os_version.minorVersion == 8 && os_version.patchVersion == 5) {
+            // Load the receiver of moveSpace:toDisplay:displayUUID:, not a generic getter tail.
+            return "?? ?? ?? 00 4C 8B 28 4C 89 EF E8 ?? ?? ?? 00 48 89 DF 4C 89 F6 E8 ?? ?? ?? 00 48 89 C3 48 8B 35 ?? ?? ?? 00 4C 89 EF";
+        }
         if (os_version.minorVersion > 0) {
             return "?? ?? ?? 00 31 FF 5D E9 ?? ?? 1C 00";
         }
