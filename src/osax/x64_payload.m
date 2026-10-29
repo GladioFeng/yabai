@@ -1,3 +1,6 @@
+// x86 stores this integer little-endian: two pxor xmm0,xmm0 instructions.
+static const uint64_t x64_zero_animation_patch = 0xc0ef0f66c0ef0f66;
+
 #define asm__call_add_space(v0,v1,func) \
     __asm__("movq %0, %%rdi;""movq %1, %%r13;""callq *%2;" : :"r"(v0), "r"(v1), "r"(func) :"%rdi", "%r13");
 

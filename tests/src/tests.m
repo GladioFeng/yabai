@@ -16,6 +16,14 @@ typedef TEST_SIG(function);
 #ifdef __x86_64__
 #include "../../src/osax/x64_payload.m"
 
+// Two pxor xmm0,xmm0 instructions must retain their byte order in memory.
+static const unsigned char x64_zero_animation_bytes[] = { 0x66, 0x0f, 0xef, 0xc0, 0x66, 0x0f, 0xef, 0xc0 };
+
+TEST_FUNC(x64_space_animation_patch_bytes,
+{
+    TEST_CHECK(memcmp(&x64_zero_animation_patch, x64_zero_animation_bytes, sizeof(x64_zero_animation_bytes)) == 0, true);
+});
+
 static bool test_pattern_matches(const unsigned char *bytes, size_t length, const char *pattern)
 {
     size_t i = 0;
@@ -90,6 +98,7 @@ static struct {
 } tests[] = {
     TEST_LIST
 #ifdef __x86_64__
+    TEST_ENTRY(x64_space_animation_patch_bytes)
     TEST_ENTRY(sonoma_14_8_5_scripting_addition_scan_windows)
 #endif
 };

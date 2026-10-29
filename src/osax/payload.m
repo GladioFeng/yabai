@@ -392,7 +392,7 @@ static void init_instances()
         NSLog(@"[yabai-sa] (0x%llx) animation_time_addr found at address 0x%llX (0x%llx)", baseaddr, animation_time_addr, animation_time_addr - baseaddr);
         if (vm_protect(mach_task_self(), page_align(animation_time_addr), vm_page_size, 0, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) == KERN_SUCCESS) {
 #ifdef __x86_64__
-            *(uint64_t *) animation_time_addr = 0x660fefc0660fefc0;
+            *(uint64_t *) animation_time_addr = x64_zero_animation_patch;
 #elif __arm64__
             *(uint32_t *) animation_time_addr = 0x2f00e400;
 #endif
