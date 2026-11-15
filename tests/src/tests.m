@@ -13,6 +13,17 @@ typedef TEST_SIG(function);
 
 #include "area.c"
 
+#ifdef __x86_64__
+#include "../../src/osax/x64_payload.m"
+
+static const unsigned char expected[] = { 0x66, 0x0f, 0xef, 0xc0, 0x66, 0x0f, 0xef, 0xc0 };
+
+TEST_FUNC(x64_space_animation_patch_bytes,
+{
+    TEST_CHECK(memcmp(&x64_zero_animation_patch, expected, sizeof(expected)) == 0, true);
+});
+#endif
+
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
     TEST_ENTRY(display_area_is_in_direction)                   \
@@ -23,6 +34,9 @@ static struct {
     test_function *func;
 } tests[] = {
     TEST_LIST
+#ifdef __x86_64__
+    TEST_ENTRY(x64_space_animation_patch_bytes)
+#endif
 };
 
 int main(int argc, char **argv)
