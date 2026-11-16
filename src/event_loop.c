@@ -1126,7 +1126,7 @@ static EVENT_HANDLER(MOUSE_DOWN)
     if (!window || window_check_flag(window, WINDOW_FULLSCREEN)) goto out;
 
     g_mouse_state.window = window;
-    g_mouse_state.window_frame = g_mouse_state.window->frame;
+    g_mouse_state.window_frame = window_ax_frame(g_mouse_state.window);
     g_mouse_state.down_location = point;
     g_mouse_state.direction = 0;
 
@@ -1269,7 +1269,7 @@ static EVENT_HANDLER(MOUSE_DRAGGED)
         int dx = point.x - g_mouse_state.down_location.x;
         int dy = point.y - g_mouse_state.down_location.y;
 
-        window_manager_resize_window_relative_internal(g_mouse_state.window, g_mouse_state.window->frame, g_mouse_state.direction, dx, dy, false);
+        window_manager_resize_window_relative_internal(g_mouse_state.window, window_ax_frame(g_mouse_state.window), g_mouse_state.direction, dx, dy, false);
 
         g_mouse_state.last_moved_time = event_time;
         g_mouse_state.down_location = point;

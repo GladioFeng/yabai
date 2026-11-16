@@ -149,6 +149,7 @@ int window_level(uint32_t wid);
 int window_sub_level(uint32_t wid);
 uint64_t window_tags(uint32_t wid);
 bool window_is_sticky(uint32_t wid);
+AXUIElementRef window_copy_usable_ax_ref(struct window *window, CGRect *frame);
 CGPoint window_ax_origin(struct window *window);
 CGRect window_ax_frame(struct window *window);
 CFStringRef window_ax_role(struct window *window);

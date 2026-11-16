@@ -1,3 +1,5 @@
+#include <math.h>
+
 extern struct window_manager g_window_manager;
 extern int g_layer_normal_window_level;
 extern int g_layer_below_window_level;
@@ -733,40 +735,72 @@ CFStringRef window_title(struct window *window)
     return value;
 }
 
+static bool window_read_ax_frame(struct window *window, AXUIElementRef ref, CGRect *frame)
+{
+    uint32_t wid = 0;
+    pid_t pid = 0;
+    if (!ref || CFGetTypeID(ref) != AXUIElementGetTypeID() ||
+        AXUIElementGetPid(ref, &pid) != kAXErrorSuccess || pid != window->application->pid ||
+        _AXUIElementGetWindow(ref, &wid) != kAXErrorSuccess || wid != window->id) return false;
+
+    CFTypeRef position = NULL, size = NULL;
+    AXError pe = AXUIElementCopyAttributeValue(ref, kAXPositionAttribute, &position);
+    AXError se = AXUIElementCopyAttributeValue(ref, kAXSizeAttribute, &size);
+    CGRect value = CGRectZero;
+    bool valid = pe == kAXErrorSuccess && se == kAXErrorSuccess && position && size &&
+                 CFGetTypeID(position) == AXValueGetTypeID() && CFGetTypeID(size) == AXValueGetTypeID() &&
+                 AXValueGetValue(position, kAXValueTypeCGPoint, &value.origin) &&
+                 AXValueGetValue(size, kAXValueTypeCGSize, &value.size) &&
+                 isfinite(value.origin.x) && isfinite(value.origin.y) &&
+                 isfinite(value.size.width) && isfinite(value.size.height) &&
+                 value.size.width > 0 && value.size.height > 0;
+    if (position) CFRelease(position);
+    if (size) CFRelease(size);
+    if (valid && frame) *frame = value;
+    return valid;
+}
+
+AXUIElementRef window_copy_usable_ax_ref(struct window *window, CGRect *frame)
+{
+    if (__atomic_load_n(&window->id_ptr, __ATOMIC_ACQUIRE) != &window->id) return NULL;
+    AXUIElementRef result = NULL;
+    CGRect value;
+    if (window_read_ax_frame(window, window->ref, &value)) {
+        result = (AXUIElementRef) CFRetain(window->ref);
+    } else {
+        // Borrow a fresh reference for this operation; keep observer ownership and the layout intact.
+        CFArrayRef windows = application_window_list(window->application);
+        if (windows) {
+            if (CFGetTypeID(windows) == CFArrayGetTypeID()) {
+                for (CFIndex i = 0, count = CFArrayGetCount(windows); i < count; ++i) {
+                    AXUIElementRef candidate = (AXUIElementRef) CFArrayGetValueAtIndex(windows, i);
+                    if (window_read_ax_frame(window, candidate, &value)) {
+                        result = (AXUIElementRef) CFRetain(candidate);
+                        break;
+                    }
+                }
+            }
+            CFRelease(windows);
+        }
+    }
+    if (result && __atomic_load_n(&window->id_ptr, __ATOMIC_ACQUIRE) != &window->id) {
+        CFRelease(result);
+        result = NULL;
+    }
+    if (result && frame) *frame = value;
+    return result;
+}
+
 CGPoint window_ax_origin(struct window *window)
 {
-    CGPoint origin = {0};
-    CFTypeRef position_ref = NULL;
-
-    AXUIElementCopyAttributeValue(window->ref, kAXPositionAttribute, &position_ref);
-
-    if (position_ref) {
-        AXValueGetValue(position_ref, kAXValueTypeCGPoint, &origin);
-        CFRelease(position_ref);
-    }
-
-    return origin;
+    return window_ax_frame(window).origin;
 }
 
 CGRect window_ax_frame(struct window *window)
 {
-    CGRect frame = {0};
-    CFTypeRef position_ref = NULL;
-    CFTypeRef size_ref = NULL;
-
-    AXUIElementCopyAttributeValue(window->ref, kAXPositionAttribute, &position_ref);
-    AXUIElementCopyAttributeValue(window->ref, kAXSizeAttribute, &size_ref);
-
-    if (position_ref) {
-        AXValueGetValue(position_ref, kAXValueTypeCGPoint, &frame.origin);
-        CFRelease(position_ref);
-    }
-
-    if (size_ref) {
-        AXValueGetValue(size_ref, kAXValueTypeCGSize, &frame.size);
-        CFRelease(size_ref);
-    }
-
+    CGRect frame = window->frame;
+    AXUIElementRef ref = window_copy_usable_ax_ref(window, &frame);
+    if (ref) CFRelease(ref);
     return frame;
 }
 

@@ -334,12 +334,17 @@ enum window_op_error window_manager_move_window_relative(struct window_manager *
     struct view *view = window_manager_find_managed_window(wm, window);
     if (view) return WINDOW_OP_ERROR_INVALID_SRC_VIEW;
 
+    CGRect frame;
+    AXUIElementRef ref = window_copy_usable_ax_ref(window, &frame);
+    if (!ref) return WINDOW_OP_ERROR_INVALID_OPERATION;
+    CFRelease(ref);
+
     if (type == TYPE_REL) {
-        dx += window->frame.origin.x;
-        dy += window->frame.origin.y;
+        dx += frame.origin.x;
+        dy += frame.origin.y;
     }
 
-    window_manager_animate_window((struct window_capture) { .window = window, .x = dx, .y = dy, .w = window->frame.size.width, .h = window->frame.size.height });
+    window_manager_animate_window((struct window_capture) { .window = window, .x = dx, .y = dy, .w = frame.size.width, .h = frame.size.height });
     return WINDOW_OP_ERROR_SUCCESS;
 }
 
@@ -398,14 +403,18 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
         view_update(view);
         view_flush(view);
     } else {
+        CGRect frame;
+        AXUIElementRef ref = window_copy_usable_ax_ref(window, &frame);
+        if (!ref) return WINDOW_OP_ERROR_INVALID_OPERATION;
+        CFRelease(ref);
         if (direction == HANDLE_ABS) {
             if (animate) {
-                window_manager_animate_window((struct window_capture) { .window = window, .x = window->frame.origin.x, .y = window->frame.origin.y, .w = dx, .h = dy });
+                window_manager_animate_window((struct window_capture) { .window = window, .x = frame.origin.x, .y = frame.origin.y, .w = dx, .h = dy });
             } else {
                 AX_ENHANCED_UI_WORKAROUND(window->application->ref, { window_manager_resize_window(window, dx, dy); });
             }
         } else {
-            window_manager_resize_window_relative_internal(window, window_ax_frame(window), direction, dx, dy, animate);
+            window_manager_resize_window_relative_internal(window, frame, direction, dx, dy, animate);
         }
     }
 
@@ -414,22 +423,30 @@ enum window_op_error window_manager_resize_window_relative(struct window_manager
 
 void window_manager_move_window(struct window *window, float x, float y)
 {
+    AXUIElementRef ref = window_copy_usable_ax_ref(window, NULL);
+    if (!ref) return;
+
     CGPoint position = CGPointMake(x, y);
     CFTypeRef position_ref = AXValueCreate(kAXValueTypeCGPoint, (void *) &position);
-    if (!position_ref) return;
+    if (!position_ref) { CFRelease(ref); return; }
 
-    AXUIElementSetAttributeValue(window->ref, kAXPositionAttribute, position_ref);
+    AXUIElementSetAttributeValue(ref, kAXPositionAttribute, position_ref);
     CFRelease(position_ref);
+    CFRelease(ref);
 }
 
 void window_manager_resize_window(struct window *window, float width, float height)
 {
+    AXUIElementRef ref = window_copy_usable_ax_ref(window, NULL);
+    if (!ref) return;
+
     CGSize size = CGSizeMake(width, height);
     CFTypeRef size_ref = AXValueCreate(kAXValueTypeCGSize, (void *) &size);
-    if (!size_ref) return;
+    if (!size_ref) { CFRelease(ref); return; }
 
-    AXUIElementSetAttributeValue(window->ref, kAXSizeAttribute, size_ref);
+    AXUIElementSetAttributeValue(ref, kAXSizeAttribute, size_ref);
     CFRelease(size_ref);
+    CFRelease(ref);
 }
 
 #pragma clang diagnostic push
@@ -728,6 +745,9 @@ void window_manager_animate_window(struct window_capture capture)
 
 void window_manager_set_window_frame(struct window *window, float x, float y, float width, float height)
 {
+    AXUIElementRef ref = window_copy_usable_ax_ref(window, NULL);
+    if (!ref) return;
+
     //
     // NOTE(asmvik): Attempting to check the window frame cache to prevent unnecessary movement and resize calls to the AX API
     // is not reliable because it is possible to perform operations that should be applied, at a higher rate than the AX API events
@@ -746,19 +766,20 @@ void window_manager_set_window_frame(struct window *window, float x, float y, fl
         CFTypeRef size_ref = AXValueCreate(kAXValueTypeCGSize, (void *) &size);
 
         // NOTE(asmvik): Due to macOS constraints (visible screen-area), we might need to resize the window *before* moving it.
-        if (size_ref) AXUIElementSetAttributeValue(window->ref, kAXSizeAttribute, size_ref);
+        if (size_ref) AXUIElementSetAttributeValue(ref, kAXSizeAttribute, size_ref);
 
         if (position_ref) {
-            AXUIElementSetAttributeValue(window->ref, kAXPositionAttribute, position_ref);
+            AXUIElementSetAttributeValue(ref, kAXPositionAttribute, position_ref);
             CFRelease(position_ref);
         }
 
         // NOTE(asmvik): Due to macOS constraints (visible screen-area), we might need to resize the window *after* moving it.
         if (size_ref) {
-            AXUIElementSetAttributeValue(window->ref, kAXSizeAttribute, size_ref);
+            AXUIElementSetAttributeValue(ref, kAXSizeAttribute, size_ref);
             CFRelease(size_ref);
         }
     });
+    CFRelease(ref);
 }
 
 void window_manager_set_purify_mode(struct window_manager *wm, enum purify_mode mode)
@@ -2394,7 +2415,7 @@ void window_manager_toggle_window_windowed_fullscreen(struct window *window)
         window_manager_animate_window((struct window_capture) { .window = window, .x = window->windowed_frame.origin.x , .y = window->windowed_frame.origin.y, .w = window->windowed_frame.size.width, .h = window->windowed_frame.size.height });
     } else {
         window_set_flag(window, WINDOW_WINDOWED);
-        window->windowed_frame = window->frame;
+        window->windowed_frame = window_ax_frame(window);
         CGRect bounds = display_bounds_constrained(did, true);
         window_manager_animate_window((struct window_capture) { .window = window, .x = bounds.origin.x, .y = bounds.origin.y, .w = bounds.size.width, .h = bounds.size.height });
     }
