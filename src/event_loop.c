@@ -828,7 +828,9 @@ static EVENT_HANDLER(WINDOW_RESIZED)
 
 static EVENT_HANDLER(WINDOW_MINIMIZED)
 {
-    struct window *window = context;
+    uint32_t window_id = (uint32_t)(intptr_t) context;
+    struct window *window = window_manager_find_window(&g_window_manager, window_id);
+    if (!window) return;
 
     if (!__sync_bool_compare_and_swap(&window->id_ptr, &window->id, &window->id)) {
         debug("%s: %d has been marked invalid by the system, ignoring event..\n", __FUNCTION__, window->id);
@@ -836,25 +838,8 @@ static EVENT_HANDLER(WINDOW_MINIMIZED)
     }
 
     debug("%s: %s %d\n", __FUNCTION__, window->application->name, window->id);
+    if (window_check_flag(window, WINDOW_MINIMIZE)) return;
     window_set_flag(window, WINDOW_MINIMIZE);
-
-    if (window_ax_can_move(window)) {
-        window_set_flag(window, WINDOW_MOVABLE);
-    } else {
-        window_clear_flag(window, WINDOW_MOVABLE);
-    }
-
-    if (window_ax_can_resize(window)) {
-        window_set_flag(window, WINDOW_RESIZABLE);
-    } else {
-        window_clear_flag(window, WINDOW_RESIZABLE);
-    }
-
-    if (window->role) CFRelease(window->role);
-    window->role = window_ax_role(window);
-
-    if (window->subrole) CFRelease(window->subrole);
-    window->subrole = window_ax_subrole(window);
 
     if (window->id == g_window_manager.last_window_id) {
         g_window_manager.last_window_id = g_window_manager.focused_window_id;
@@ -872,7 +857,9 @@ static EVENT_HANDLER(WINDOW_MINIMIZED)
 
 static EVENT_HANDLER(WINDOW_DEMINIMIZED)
 {
-    struct window *window = context;
+    uint32_t window_id = (uint32_t)(intptr_t) context;
+    struct window *window = window_manager_find_window(&g_window_manager, window_id);
+    if (!window) return;
 
     if (!__sync_bool_compare_and_swap(&window->id_ptr, &window->id, &window->id)) {
         debug("%s: %d has been marked invalid by the system, ignoring event..\n", __FUNCTION__, window->id);
@@ -880,25 +867,10 @@ static EVENT_HANDLER(WINDOW_DEMINIMIZED)
         return;
     }
 
+    if (!window_check_flag(window, WINDOW_MINIMIZE)) return;
     window_clear_flag(window, WINDOW_MINIMIZE);
 
-    if (window_ax_can_move(window)) {
-        window_set_flag(window, WINDOW_MOVABLE);
-    } else {
-        window_clear_flag(window, WINDOW_MOVABLE);
-    }
-
-    if (window_ax_can_resize(window)) {
-        window_set_flag(window, WINDOW_RESIZABLE);
-    } else {
-        window_clear_flag(window, WINDOW_RESIZABLE);
-    }
-
-    if (window->role) CFRelease(window->role);
-    window->role = window_ax_role(window);
-
-    if (window->subrole) CFRelease(window->subrole);
-    window->subrole = window_ax_subrole(window);
+    window_refresh_ax_properties(window);
 
     uint64_t sid = space_manager_active_space();
     if (space_manager_is_window_on_space(sid, window)) {

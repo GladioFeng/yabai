@@ -791,6 +791,33 @@ AXUIElementRef window_copy_usable_ax_ref(struct window *window, CGRect *frame)
     return result;
 }
 
+void window_refresh_ax_properties(struct window *window)
+{
+    AXUIElementRef ref = window_copy_usable_ax_ref(window, NULL);
+    if (!ref) return;
+
+    // Preserve known properties when the old AX reference no longer responds.
+    Boolean value;
+    if (AXUIElementIsAttributeSettable(ref, kAXPositionAttribute, &value) == kAXErrorSuccess) {
+        if (value) window_set_flag(window, WINDOW_MOVABLE);
+        else window_clear_flag(window, WINDOW_MOVABLE);
+    }
+    if (AXUIElementIsAttributeSettable(ref, kAXSizeAttribute, &value) == kAXErrorSuccess) {
+        if (value) window_set_flag(window, WINDOW_RESIZABLE);
+        else window_clear_flag(window, WINDOW_RESIZABLE);
+    }
+    CFTypeRef role = NULL, subrole = NULL;
+    if (AXUIElementCopyAttributeValue(ref, kAXRoleAttribute, &role) == kAXErrorSuccess && role) {
+        if (window->role) CFRelease(window->role);
+        window->role = role;
+    }
+    if (AXUIElementCopyAttributeValue(ref, kAXSubroleAttribute, &subrole) == kAXErrorSuccess && subrole) {
+        if (window->subrole) CFRelease(window->subrole);
+        window->subrole = subrole;
+    }
+    CFRelease(ref);
+}
+
 CGPoint window_ax_origin(struct window *window)
 {
     return window_ax_frame(window).origin;

@@ -11,6 +11,8 @@ typedef OBSERVER_CALLBACK(observer_callback);
 #define AX_APPLICATION_WINDOW_TITLE_CHANGED_INDEX 4
 #define AX_APPLICATION_WINDOW_MENU_OPENED_INDEX   5
 #define AX_APPLICATION_WINDOW_MENU_CLOSED_INDEX   6
+#define AX_APPLICATION_WINDOW_MINIMIZED_INDEX     7
+#define AX_APPLICATION_WINDOW_DEMINIMIZED_INDEX   8
 
 #define AX_APPLICATION_WINDOW_CREATED       (1 << AX_APPLICATION_WINDOW_CREATED_INDEX)
 #define AX_APPLICATION_WINDOW_FOCUSED       (1 << AX_APPLICATION_WINDOW_FOCUSED_INDEX)
@@ -51,7 +53,9 @@ static const char *ax_application_notification_str[] =
     [AX_APPLICATION_WINDOW_RESIZED_INDEX]       = "kAXWindowResizedNotification",
     [AX_APPLICATION_WINDOW_TITLE_CHANGED_INDEX] = "kAXTitleChangedNotification",
     [AX_APPLICATION_WINDOW_MENU_OPENED_INDEX]   = "kAXMenuOpenedNotification",
-    [AX_APPLICATION_WINDOW_MENU_CLOSED_INDEX]   = "kAXMenuClosedNotification"
+    [AX_APPLICATION_WINDOW_MENU_CLOSED_INDEX]   = "kAXMenuClosedNotification",
+    [AX_APPLICATION_WINDOW_MINIMIZED_INDEX]     = "kAXWindowMiniaturizedNotification",
+    [AX_APPLICATION_WINDOW_DEMINIMIZED_INDEX]   = "kAXWindowDeminiaturizedNotification"
 };
 
 static CFStringRef ax_application_notification[] =
@@ -62,7 +66,9 @@ static CFStringRef ax_application_notification[] =
     [AX_APPLICATION_WINDOW_RESIZED_INDEX]       = kAXWindowResizedNotification,
     [AX_APPLICATION_WINDOW_TITLE_CHANGED_INDEX] = kAXTitleChangedNotification,
     [AX_APPLICATION_WINDOW_MENU_OPENED_INDEX]   = kAXMenuOpenedNotification,
-    [AX_APPLICATION_WINDOW_MENU_CLOSED_INDEX]   = kAXMenuClosedNotification
+    [AX_APPLICATION_WINDOW_MENU_CLOSED_INDEX]   = kAXMenuClosedNotification,
+    [AX_APPLICATION_WINDOW_MINIMIZED_INDEX]     = kAXWindowMiniaturizedNotification,
+    [AX_APPLICATION_WINDOW_DEMINIMIZED_INDEX]   = kAXWindowDeminiaturizedNotification
 };
 
 struct application
@@ -73,7 +79,7 @@ struct application
     pid_t pid;
     char *name;
     AXObserverRef observer_ref;
-    uint8_t notification;
+    uint16_t notification;
     bool is_observing;
     bool is_hidden;
     bool ax_retry;

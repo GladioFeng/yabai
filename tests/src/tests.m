@@ -5,10 +5,12 @@ static AXError test_ax_copy(AXUIElementRef, CFStringRef, CFTypeRef *);
 static AXError test_ax_set(AXUIElementRef, CFStringRef, CFTypeRef);
 static AXError test_ax_pid(AXUIElementRef, pid_t *);
 static AXError test_ax_id(AXUIElementRef, uint32_t *);
+static AXError test_ax_settable(AXUIElementRef, CFStringRef, Boolean *);
 #define AXUIElementCopyAttributeValue test_ax_copy
 #define AXUIElementSetAttributeValue test_ax_set
 #define AXUIElementGetPid test_ax_pid
 #define _AXUIElementGetWindow test_ax_id
+#define AXUIElementIsAttributeSettable test_ax_settable
 unsigned char __src_osax_payload[1];
 unsigned int __src_osax_payload_len;
 unsigned char __src_osax_loader[1];
@@ -19,6 +21,7 @@ unsigned int __src_osax_loader_len;
 #undef AXUIElementSetAttributeValue
 #undef AXUIElementGetPid
 #undef _AXUIElementGetWindow
+#undef AXUIElementIsAttributeSettable
 
 #define TEST_SIG(name) bool test_##name(void)
 typedef TEST_SIG(function);
@@ -35,12 +38,13 @@ static struct {
     AXUIElementRef app, old, fresh;
     CGRect frame, written;
     struct window *destroy_window;
-    int enumerations, old_writes, fresh_writes;
+    int enumerations, old_writes, fresh_writes, attribute_reads, capability_reads;
 } ax_test;
 
 static AXError test_ax_copy(AXUIElementRef ref, CFStringRef key, CFTypeRef *value)
 {
     if (!ax_test.active) return AXUIElementCopyAttributeValue(ref, key, value);
+    ++ax_test.attribute_reads;
     *value = NULL;
     if (ref == ax_test.app && CFEqual(key, kAXWindowsAttribute)) {
         ++ax_test.enumerations;
@@ -55,6 +59,8 @@ static AXError test_ax_copy(AXUIElementRef ref, CFStringRef key, CFTypeRef *valu
     CGRect f = ref == ax_test.old && !ax_test.healthy ? CGRectZero : ax_test.frame;
     if (CFEqual(key, kAXPositionAttribute)) *value = AXValueCreate(kAXValueTypeCGPoint, &f.origin);
     else if (CFEqual(key, kAXSizeAttribute)) *value = AXValueCreate(kAXValueTypeCGSize, &f.size);
+    else if (CFEqual(key, kAXRoleAttribute)) *value = CFRetain(kAXWindowRole);
+    else if (CFEqual(key, kAXSubroleAttribute)) *value = CFRetain(kAXStandardWindowSubrole);
     else return kAXErrorAttributeUnsupported;
     return kAXErrorSuccess;
 }
@@ -85,6 +91,83 @@ static AXError test_ax_id(AXUIElementRef ref, uint32_t *id)
     *id = ref == ax_test.fresh && ax_test.wrong_id ? 999 : 225;
     return kAXErrorSuccess;
 }
+
+static AXError test_ax_settable(AXUIElementRef ref, CFStringRef key, Boolean *value)
+{
+    if (!ax_test.active) return AXUIElementIsAttributeSettable(ref, key, value);
+    ++ax_test.capability_reads;
+    if (ref != ax_test.fresh) return kAXErrorInvalidUIElement;
+    *value = true;
+    return kAXErrorSuccess;
+}
+
+TEST_FUNC(ax_minimize_notification_routing,
+{
+    ax_test = (typeof(ax_test)){0};
+    ax_test.active = true;
+    ax_test.app = AXUIElementCreateApplication(100);
+    ax_test.old = AXUIElementCreateApplication(101);
+    ax_test.fresh = AXUIElementCreateApplication(102);
+    ax_test.frame = CGRectMake(20, 30, 400, 300);
+    ax_test.id_error = kAXErrorIllegalArgument;
+    struct application app = {0}; app.ref = ax_test.app; app.pid = 500;
+    struct window w = {0}; w.application = &app; w.ref = ax_test.old; w.id = 225; w.id_ptr = &w.id;
+    window_refresh_ax_properties(&w);
+    TEST_CHECK(window_can_move(&w) && window_can_resize(&w), true);
+    TEST_CHECK(CFEqual(w.subrole, kAXStandardWindowSubrole), true);
+    ax_test.missing = true;
+    window_refresh_ax_properties(&w);
+    TEST_CHECK(window_can_move(&w) && window_can_resize(&w), true);
+    TEST_CHECK(CFEqual(w.subrole, kAXStandardWindowSubrole), true);
+    ax_test.missing = false;
+
+    // Exercise callbacks from both registration scopes without a worker thread.
+    memory_pool_init(&g_event_loop.pool, 4096);
+    char name[64]; snprintf(name, sizeof(name), "/yabai_min_test_%d", getpid());
+    g_event_loop.semaphore = sem_open(name, O_CREAT, 0600, 0); sem_unlink(name);
+    g_event_loop.head = memory_pool_push(&g_event_loop.pool, sizeof(struct event));
+    g_event_loop.head->next = NULL; g_event_loop.tail = g_event_loop.head;
+    for (int i = 0; i < 4; ++i) {
+        application_notification_handler(NULL, ax_test.fresh,
+            i < 2 ? kAXWindowMiniaturizedNotification : kAXWindowDeminiaturizedNotification,
+            i % 2 ? (void *)&w : (void *)&app);
+        TEST_CHECK(g_event_loop.tail->type == (i < 2 ? WINDOW_MINIMIZED : WINDOW_DEMINIMIZED), true);
+        TEST_CHECK((uint32_t)(uintptr_t)g_event_loop.tail->context == w.id, true);
+    }
+    sem_close(g_event_loop.semaphore);
+    munmap(g_event_loop.pool.memory, g_event_loop.pool.size + getpagesize());
+    g_event_loop = (struct event_loop){0};
+
+    table_init(&g_window_manager.window, 13, hash_wm, compare_wm);
+    table_init(&g_window_manager.window_lost_focused_event, 13, hash_wm, compare_wm);
+    table_add(&g_window_manager.window, &w.id, &w);
+    table_init(&g_window_manager.managed_window, 13, hash_wm, compare_wm);
+    ax_test.attribute_reads = ax_test.capability_reads = 0;
+    EVENT_HANDLER_WINDOW_MINIMIZED((void *)(uintptr_t)w.id, 0);
+    TEST_CHECK(window_check_flag(&w, WINDOW_MINIMIZE), true);
+    TEST_CHECK(ax_test.attribute_reads == 0 && ax_test.capability_reads == 0, true);
+    TEST_CHECK(window_can_move(&w) && window_can_resize(&w), true);
+    TEST_CHECK(CFEqual(w.subrole, kAXStandardWindowSubrole), true);
+    // Duplicate notifications and queued events for destroyed windows must be harmless.
+    window_set_flag(&w, WINDOW_MINIMIZE);
+    EVENT_HANDLER_WINDOW_MINIMIZED((void *)(uintptr_t)w.id, 0);
+    window_clear_flag(&w, WINDOW_MINIMIZE);
+    EVENT_HANDLER_WINDOW_DEMINIMIZED((void *)(uintptr_t)w.id, 0);
+    w.id_ptr = NULL;
+    EVENT_HANDLER_WINDOW_MINIMIZED((void *)(uintptr_t)w.id, 0);
+    EVENT_HANDLER_WINDOW_DEMINIMIZED((void *)(uintptr_t)w.id, 0);
+    EVENT_HANDLER_WINDOW_MINIMIZED((void *)(uintptr_t)999, 0);
+    EVENT_HANDLER_WINDOW_DEMINIMIZED((void *)(uintptr_t)999, 0);
+    TEST_CHECK(window_check_flag(&w, WINDOW_MINIMIZE), false);
+    table_free(&g_window_manager.managed_window);
+    table_free(&g_window_manager.window);
+    table_free(&g_window_manager.window_lost_focused_event);
+    app.notification = 1 << AX_APPLICATION_WINDOW_DEMINIMIZED_INDEX;
+    TEST_CHECK(app.notification == 256, true);
+    CFRelease(w.role); CFRelease(w.subrole);
+    CFRelease(ax_test.app); CFRelease(ax_test.old); CFRelease(ax_test.fresh);
+    ax_test = (typeof(ax_test)){0};
+});
 
 TEST_FUNC(ax_stale_reference_recovery,
 {
@@ -173,6 +256,7 @@ static struct {
     test_function *func;
 } tests[] = {
     TEST_LIST
+    TEST_ENTRY(ax_minimize_notification_routing)
     TEST_ENTRY(ax_stale_reference_recovery)
 #ifdef __x86_64__
     TEST_ENTRY(x64_space_animation_patch_bytes)
